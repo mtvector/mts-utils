@@ -1,2 +1,2 @@
-# sc-utils
+# mts-utils
 Collection of functions from across repos
