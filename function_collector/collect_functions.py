@@ -45,7 +45,7 @@ def extract_functions_from_lines(lines):
 
     return function_defs
 
-def extract_functions_from_files(directory,outfile=''):
+def extract_functions_from_files(directory,outfile='../extracted_functions.py'):
     """
     Extracts functions from .py and .ipynb files in the given directory and writes them to a new Python file.
     """
