@@ -45,7 +45,7 @@ class ChromosomeSplitter:
     @staticmethod
     def read_fasta_and_split(file_path, split_locations):
         """
-        Reads in a fasta and 
+        Reads in a fasta and split chromosomes at points specicified indicated in split_locations dict
         """
         new_sequences={}
         for record in SeqIO.parse(file_path, "fasta"):
@@ -71,6 +71,9 @@ class ChromosomeSplitter:
     
     @staticmethod
     def gtf_chrom_name_change(gtf_file, split_locations, output_file):
+        """
+        Replaces split chromosome names in associated gtf and corrects their start and end point
+        """
         with open(gtf_file) as gtf_handle, open(output_file, "w") as out_handle:
             gtf_reader=csv.reader(gtf_handle, delimiter="\t")
             gtf_writer=csv.writer(out_handle, delimiter="\t")
