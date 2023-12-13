@@ -3,6 +3,16 @@ import csv
 import re
 from collections import defaultdict
 
+def zcumsum(iterable):
+    cumulative_sum=[0]
+    total=0
+    for item in iterable:
+        total += item
+        cumulative_sum.append(total)
+    cumulative_sum=cumulative_sum+[float("inf")]
+    return cumulative_sum
+
+
 class ChromosomeSplitter:
     """
     Takes a dictionary of chromosomes and split locations and splits into multiple chromosomes, and corrects associated GTF file
@@ -59,16 +69,6 @@ class ChromosomeSplitter:
             for chrom, seq in new_sequences.items():
                 SeqIO.write(SeqIO.SeqRecord(seq, id=chrom, description=""), output_handle, "fasta")
     
-    
-    def zcumsum(iterable):
-        cumulative_sum=[0]
-        total=0
-        for item in iterable:
-            total += item
-            cumulative_sum.append(total)
-        cumulative_sum=cumulative_sum+[float("inf")]
-        return cumulative_sum
-
     @staticmethod
     def gtf_chrom_name_change(gtf_file, split_locations, output_file):
         with open(gtf_file) as gtf_handle, open(output_file, "w") as out_handle:
