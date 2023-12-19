@@ -1,8 +1,3 @@
-from Bio import SeqIO
-import csv
-import re
-from collections import defaultdict
-
 def zcumsum(iterable):
     cumulative_sum=[0]
     total=0
@@ -15,8 +10,17 @@ def zcumsum(iterable):
 
 class ChromosomeSplitter:
     """
-    Takes a dictionary of chromosomes and split locations and splits into multiple chromosomes, and corrects associated GTF file
+    Splits contigs greater than a threshold into multiple contigs, and corrects associated GTF file
 
+    Detecting breakpoints is as follows: 
+    for contigs larger than the thrshold, identify the theoretical 
+    split indices that will split it into n equal size contigs 
+    smaller than the threshold. Then for each split point, 
+    look at the nearest 10 intergenic regions and pick the midpoint 
+    of the largest intergenic region as the 
+    optimal split point for each split.
+
+    Can also take a dictionary of lists of breakpoints as input to skip detection step.
     # Example usage
     import os
     top_path='/allen/programs/celltypes/workgroups/rnaseqanalysis/EvoGen/genomes/Opossum/raw_files/'
@@ -34,14 +38,89 @@ class ChromosomeSplitter:
     ChromosomeSplitter.write_new_fasta(new_sequences, new_fasta_file)
     ChromosomeSplitter.gtf_chrom_name_change(gtf_file, split_locations, new_gtf_file)
     
-    ##or
+    ##or detecting new from scratch
     ChromosomeSplitter(split_locations,fasta_file,gtf_file,new_fasta_file,new_gtf_file)
     """
-    def __init__(self,split_locations,fasta_file,gtf_file,new_fasta_file,new_gtf_file):
+    def __init__(self,fasta_file,gtf_file,new_fasta_file,new_gtf_file,length_threshold=5e8,split_locations=None):
+        if split_locations is None:
+            split_locations=self.find_split_points(fasta_file, gtf_file, length_threshold)
+
+        self.split_locations=split_locations
         new_sequences=self.read_fasta_and_split(fasta_file, split_locations)
         self.write_new_fasta(new_sequences, new_fasta_file)
         self.gtf_chrom_name_change(gtf_file, split_locations, new_gtf_file)
-        
+
+
+    @staticmethod
+    def read_fasta(fasta_file):
+        sequences = {}
+        for record in SeqIO.parse(fasta_file, "fasta"):
+            sequences[record.id] = len(record.seq)
+        return sequences
+
+    @staticmethod
+    def read_gtf_as_bed(gtf_file):
+        # Read the GTF file
+        df = pd.read_csv(gtf_file, sep='\t', comment='#', header=None,
+                         names=['seqname', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute'])
+    
+        # Adjust start position for BED format (0-based)
+        df['start'] = df['start'] - 1
+    
+        # Extract gene name or other identifiers from the attributes column
+        df['name'] = df['attribute'].str.extract('gene_id "([^"]+)"')
+    
+        # If gene name is not found, extract gene_id
+        df.loc[df['name'].isna(),'name']=df['attribute'].str.extract('gene_name "([^"]+)"')[df['name'].isna()].to_numpy()
+       
+        df['extra'] = df['attribute']
+        bed_df = df[['seqname', 'start', 'end', 'name', 'score', 'strand', 'extra']]   
+        return bed_df
+
+    @staticmethod
+    def find_nearest_intergenic_regions(genes, split_point, num_regions=10):
+        # Sort genes based on the distance to the split point
+        genes.loc[:,'distance'] = genes['start'].subtract(split_point).abs()
+        nearest_genes = genes.sort_values(by='distance').head(num_regions)
+        # Find intergenic regions among these genes
+        intergenic_regions = []
+        prev_end = nearest_genes['end'].to_numpy().min()
+        for _, row in nearest_genes.iterrows():
+            if row['start'] > prev_end:
+                intergenic_regions.append((prev_end, row['start']))
+            prev_end = row['end']
+        return intergenic_regions
+
+    @classmethod
+    def find_split_points(cls,fasta_file, gtf_file, length_threshold):
+        sequences = cls.read_fasta(fasta_file)
+        genes = cls.read_gtf_as_bed(gtf_file)
+    
+        split_points = {}
+    
+        for contig, length in sequences.items():
+            if length <= length_threshold:
+                continue
+    
+            # Calculate the number of segments needed
+            num_segments = int(np.ceil(length / length_threshold))
+            # Identify theoretical split indices
+            theoretical_splits = [i * length // num_segments for i in range(1, num_segments)]
+            # Filter genes on this contig
+            contig_genes = genes[genes['seqname'] == contig]
+            optimal_splits = []
+            for split in theoretical_splits:
+                # Find nearest intergenic regions to this split
+                intergenic_regions = cls.find_nearest_intergenic_regions(contig_genes, split)
+                # Choose the midpoint of the largest intergenic region
+                largest_intergenic = max(intergenic_regions, key=lambda x: x[1] - x[0])
+                optimal_split = (largest_intergenic[0] + largest_intergenic[1]) // 2
+                optimal_splits.append(optimal_split)
+    
+            split_points[contig] = optimal_splits
+    
+        return split_points
+    
     @staticmethod
     def read_fasta_and_split(file_path, split_locations):
         """
@@ -97,5 +176,3 @@ class ChromosomeSplitter:
                             break
     
                 gtf_writer.writerow(row)
-
-
