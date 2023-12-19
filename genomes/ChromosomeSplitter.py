@@ -13,11 +13,11 @@ class ChromosomeSplitter:
     Splits contigs greater than a threshold into multiple contigs, and corrects associated GTF file
 
     Detecting breakpoints is as follows: 
-    for contigs larger than the thrshold, identify the theoretical 
+    for contigs larger than the threshold, identify the theoretical 
     split indices that will split it into n equal size contigs 
     smaller than the threshold. Then for each split point, 
-    look at the nearest 10 intergenic regions and pick the midpoint 
-    of the largest intergenic region as the 
+    look at the nearest 50 intergenic regions (using the gtf gene annotations) 
+    and pick the midpoint of the largest intergenic region as the 
     optimal split point for each split.
 
     Can also take a dictionary of lists of breakpoints as input to skip detection step.
@@ -59,7 +59,7 @@ class ChromosomeSplitter:
         return sequences
 
     @staticmethod
-    def read_gtf_as_bed(gtf_file):
+    def read_gtf_as_bed(gtf_file,gene_only=True):
         # Read the GTF file
         df = pd.read_csv(gtf_file, sep='\t', comment='#', header=None,
                          names=['seqname', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute'])
@@ -74,19 +74,25 @@ class ChromosomeSplitter:
         df.loc[df['name'].isna(),'name']=df['attribute'].str.extract('gene_name "([^"]+)"')[df['name'].isna()].to_numpy()
        
         df['extra'] = df['attribute']
+        if gene_only:
+            df=df.loc[df['feature']=='gene',:]
+            
         bed_df = df[['seqname', 'start', 'end', 'name', 'score', 'strand', 'extra']]   
         return bed_df
 
     @staticmethod
-    def find_nearest_intergenic_regions(genes, split_point, num_regions=10):
+    def find_nearest_intergenic_regions(genes, split_point, num_regions=50):
         # Sort genes based on the distance to the split point
         genes.loc[:,'distance'] = genes['start'].subtract(split_point).abs()
         nearest_genes = genes.sort_values(by='distance').head(num_regions)
+        nearest_genes = nearest_genes.sort_values(by='start')
+        all_sites=np.array(list(nearest_genes['start'].to_numpy())+list(nearest_genes['end'].to_numpy()))
         # Find intergenic regions among these genes
         intergenic_regions = []
-        prev_end = nearest_genes['end'].to_numpy().min()
+        prev_end = nearest_genes['end'].to_numpy()[0]
         for _, row in nearest_genes.iterrows():
-            if row['start'] > prev_end:
+            #First is normal intergenic, second checks against possibility of nested genes
+            if (row['start'] > prev_end) and (row['start']==all_sites[all_sites>prev_end].min()):
                 intergenic_regions.append((prev_end, row['start']))
             prev_end = row['end']
         return intergenic_regions
