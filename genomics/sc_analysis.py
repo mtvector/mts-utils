@@ -10,6 +10,16 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+def max_column_match(v,df):
+    max_count=0
+    max_ind=''
+    for c in df.columns:
+        matched_count=df[c].isin(v).sum()
+        if matched_count>max_count:
+            max_count=matched_count
+            max_ind=c
+    return(max_ind)
+
 def select_k_cells(adata, obs_column, k):
     """
     Select k cells from an AnnData object with as equal representation from each category in the obs column as possible.
@@ -67,16 +77,18 @@ def sanitize_anndata(adata):
             # Check if column is of type 'object' or 'category' with object categories
             if (df[column].dtype == 'object') or (df[column].dtype == 'string') or (df[column].dtype.name == 'category' and issubclass(df[column].cat.categories.dtype.type, object)):
                 # Use to_numeric for conversion, set errors='coerce' to handle non-convertible values
-                converted_column = pd.to_numeric(df[column], errors='coerce')
-    
+                #converted_column = pd.to_numeric(df[column], errors='coerce')
+                converted_column = df[column].astype(str)
                 # Check if the conversion was successful (i.e., not all values are NaN)
-                if converted_column.notna().any():
+                if converted_column.isna().any():
                     df[column] = converted_column
                 else:
                     # Convert to string if conversion to float fails
                     df[column] = df[column].astype(str).fillna('nan')
             if 'float' in df[column].dtype.name.lower():
                 df[column]=df[column].astype('string').fillna('nan').astype('float')
+            if 'int' in df[column].dtype.name.lower():
+                df[column]=df[column].astype(int).fillna(-99999999).astype(int)
         return df
 
     adata.obs = convert_columns(adata.obs)
