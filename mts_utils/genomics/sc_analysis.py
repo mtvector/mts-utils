@@ -20,48 +20,50 @@ def max_column_match(v,df):
             max_ind=c
     return(max_ind)
 
-def select_k_cells(adata, obs_column, k):
-    """
-    Select k cells from an AnnData object with as equal representation from each category in the obs column as possible.
 
-    Parameters:
-    - adata: AnnData object
-    - obs_column: The column in adata.obs to use for categories
-    - k: Total number of cells to select
-
-    Returns:
-    - An AnnData object containing the selected cells
-    """
+def distribute_evenly(a, k):
+    n = len(a)  # Number of elements
+    r = [0] * n  # Initialize result vector with zeros
     
-    categories = adata.obs[obs_column].value_counts().index
-    n_categories = len(categories)
-    base_num = k // n_categories
+    # First pass: Try to distribute evenly based on the initial total
+    avg = k // n
+    for i in range(n):
+        r[i] = min(a[i], avg)
+    
+    remaining = k - sum(r)  # Calculate remaining after initial distribution
+    
+    # Distribute the remaining as evenly as possible
+    while remaining > 0:
+        # Calculate the updated average for the remaining amount
+        updates = 0
+        for i in range(n):
+            if r[i] < a[i]:
+                potential_add = min(a[i] - r[i], remaining // (n - updates))
+                if potential_add > 0:
+                    r[i] += potential_add
+                    remaining -= potential_add
+                    updates += 1
+                    if remaining == 0:
+                        break
+        
+        # In case there are no updates, but still remaining (to avoid infinite loop)
+        if updates == 0:
+            break
+    
+    return r
 
-    cells_to_take = {}
-    selected_indices = []
-    leftovers = 0
+def select_k_cells(adata, obs_column, k):
+    a = adata.obs[obs_column].value_counts()
+    categories = a.index
 
-    # First pass: Allocate cells according to min(base_num, available_cells_in_category)
-    for cat in categories:
+    r = distribute_evenly(a,k)
+    
+    inds=[]
+    for i,cat in enumerate(categories):
         cat_cells = adata.obs.index[adata.obs[obs_column] == cat].tolist()
-        if len(cat_cells) <= base_num:
-            selected_from_cat = cat_cells
-            leftovers += base_num - len(cat_cells)
-        else:
-            selected_from_cat = np.random.choice(cat_cells, size=base_num, replace=False)
-        selected_indices.extend(selected_from_cat)
-
-    # Second pass: Distribute the leftovers
-    for cat in categories:
-        cat_cells = list(set(adata.obs.index[adata.obs[obs_column] == cat].tolist()) - set(selected_indices))
-        if leftovers > 0 and len(cat_cells) > 0:
-            additional = min(leftovers, len(cat_cells))
-            selected_additional = np.random.choice(cat_cells, size=additional, replace=False)
-            selected_indices.extend(selected_additional)
-            leftovers -= additional
-
-    return adata[selected_indices].copy()
-
+        inds.append(np.random.choice(cat_cells, size=r[i], replace=False))
+    selected_indices=[item for sublist in inds for item in sublist]
+    return adata[selected_indices,:]
 
 def sanitize_anndata(adata):
     '''
