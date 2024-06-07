@@ -8,7 +8,10 @@ import tqdm
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
-
+try:
+    import gseapy
+except:
+    print('not all packages available')
 
 def max_column_match(v,df):
     max_count=0
@@ -285,14 +288,13 @@ def corr2_coeff(A, B):
     Calculate pearson correlation of row vectors of A vs row vectors of B
     '''
     # Rowwise mean of input arrays & subtract from input arrays themeselves
-    A_mA = A - A.mean(1)[:, None]
-    B_mB = B - B.mean(1)[:, None]
+    A_mA = A - np.array(A).mean(1)[:, None]
+    B_mB = B - np.array(B).mean(1)[:, None]
     # Sum of squares across rows
     ssA = (A_mA**2).sum(1)
     ssB = (B_mB**2).sum(1)
     # Finally get corr coeff
-    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(ssA[:, None],ssB[None]))
-
+    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(np.array(ssA)[:, None],np.array(ssB)[None]))
 
 def get_top_n_indices_and_values(df, columns, n):
     '''
@@ -548,4 +550,61 @@ def calculate_function_per_cluster(df, cluster_col, individual_col,fun=gini_coef
         gini_score = fun(counts)
         gini_scores.append({'Cluster': cluster, 'Value': gini_score, 'Type': cluster_col})
     return pd.DataFrame(gini_scores)
+
+def get_prerank_custom_list(input_series,gene_list_dict,**kwargs):
+    """
+    Run GSEApy prerank on a custom gene list.
+
+    Parameters:
+    input_series (pd.Series): A pandas Series where the index is gene names and the values are numerical.
+    gene_list (list): A list of HGNC gene symbols.
+
+    Returns:
+    Pandas dataframe of res2d
+    """
+
+    df = input_series.reset_index()
+    df.columns = ['gene_name', 'rank_metric']
+    pre_res = gseapy.prerank(rnk=df,
+                         gene_sets=gene_list_dict, 
+                         processes=1,
+                         outdir=None,
+                         seed=13,
+                         **kwargs)
+    return(pre_res.res2d)
+
+
+def get_prerank_from_mat(mat,gene_list_dict,**kwargs):
+    """
+    Run GSEApy prerank on a custom gene list.
+
+    Parameters:
+    mat (pd.DataFrame): A pandas Dataframe where the index is gene names and the values are numerical.
+    gene_list (list): A list of HGNC gene symbols.
+
+    Returns:
+    Pandas dataframe of res2ds concatenated
+    """
+    import warnings
+    results={}
+    for x in tqdm.tqdm(mat.columns):
+        warnings.filterwarnings(action='ignore')
+        warnings.catch_warnings(action="ignore")
+        results[x]=get_prerank_custom_list(mat[x],gene_list_dict,**kwargs)
+        results[x]['input_column']=x
+    enrichdf=pd.concat(results.values())
+    return(enrichdf)
+
+
+def add_linkage_adata(adata,df,groupby,cluster_labels,method='average',metric='cityblock'):
+    dend_key='dendrogram_'+groupby
+    row_linkage=scipy.cluster.hierarchy.linkage(df,method=method,metric=metric)
+    adata.uns['dendrogram_level_2']['linkage']
+    adata.uns['dendrogram_level_2']['groupby']=groupby
+    adata.uns['dendrogram_level_2']['use_rep']=''
+    adata.uns['dendrogram_level_2']['cor_method']=metric
+    adata.uns['dendrogram_level_2']['linkage_method']=method
+    adata.uns['dendrogram_level_2']['categories_idx_ordered']=scipy.cluster.hierarchy.leaves_list(row_linkage)
+    adata.uns['dendrogram_level_2']['categories_ordered']=pd.Series(cluster_labels)[adata.uns['dendrogram_level_2']['categories_idx_ordered']].to_list()
+    adata.uns['dendrogram_level_2']['dendrogram_info']=scipy.cluster.hierarchy.dendrogram(adata.uns['dendrogram_level_2']['linkage'], no_plot=True)
 
